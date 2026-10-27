@@ -1,0 +1,119 @@
+<!doctype html>
+<html lang="zh">
+<head>
+<meta charset="utf-8">
+<title>图片加层（碎屏效果）</title>
+<style>
+#view{max-width:100%;height:auto;display:block}
+</style>
+</head>
+<body>
+<h1>图片加层（碎屏效果）</h1>
+<p>1. 选图片 → 2. 不满意可点"随机破损"换位置和形状 → 3. 下载 PNG。</p>
+
+<p><input type="file" id="file" accept="image/*"></p>
+<p>
+<button id="rand" disabled>随机破损</button>
+<button id="save" disabled>下载 PNG</button>
+</p>
+
+<canvas id="view" hidden></canvas>
+
+<script>
+const $ = id => document.getElementById(id);
+let img = null;    // 当前图片
+let dmg = null;    // 当前破损参数
+
+// 生成一组破损参数：位置固定（水平居中、竖线终点在距底部 40% 处），
+// 每次调用只随机破损块自身的不规则形状
+function makeDamage(w, h) {
+  const Xc = w * 0.5;
+  const Yj = h * 0.6;
+  const rx = w * 0.02;            // 竖椭圆横向半径
+  const ry = h * 0.07;            // 竖椭圆纵向半径
+  const cy = Yj + ry;             // 破损中心：椭圆顶接着竖线终点
+  const pts = [];                 // 椭圆范围内的不规则多边形
+  const n = 9 + Math.floor(Math.random() * 5);
+  for (let i = 0; i < n; i++) {
+    const a = (i / n) * Math.PI * 2;
+    pts.push([
+      Xc + Math.cos(a) * rx * (0.55 + Math.random() * 0.45),
+      cy + Math.sin(a) * ry * (0.55 + Math.random() * 0.45)
+    ]);
+  }
+  return { Xc, Yj, cy, rx, ry, pts };
+}
+
+// 亮线：纯色单线 + 同色小范围发光
+function brightLine(x, color, w, draw) {
+  x.save();
+  x.lineCap = 'round';
+  x.beginPath(); draw();
+  x.shadowColor = color; x.shadowBlur = w * 6;
+  x.strokeStyle = color; x.lineWidth = w; x.stroke(); x.stroke();
+  x.restore();
+}
+
+// 在 canvas 上叠加整层碎屏效果，其余地方不动（透明）
+// 先画亮线再画黑色：黑色破损把亮线的内侧盖住，亮线正好从破损边缘接出来
+function drawOverlay(x, w, h, d) {
+  const lw = Math.max(2, w * 0.003);
+
+  // 纯紫亮线：从破损中心往下到图片底部（上端被黑色破损盖住）
+  brightLine(x, '#a020f0', lw, () => {
+    x.moveTo(d.Xc, d.cy); x.lineTo(d.Xc, h);
+  });
+
+  // 纯绿亮线：从破损中心到右边缘（左端被黑色破损盖住）
+  brightLine(x, '#00ff00', lw, () => {
+    x.moveTo(d.Xc, d.cy); x.lineTo(w, d.cy);
+  });
+
+  // 纯黑竖线：从顶部一直画到破损中心，保证连成一体
+  x.strokeStyle = '#000';
+  x.lineWidth = Math.max(2, w * 0.004);
+  x.beginPath(); x.moveTo(d.Xc, 0); x.lineTo(d.Xc, d.cy); x.stroke();
+
+  // 纯黑不规则破损块（竖椭圆范围内）
+  x.fillStyle = '#000';
+  x.beginPath();
+  d.pts.forEach((p, i) => i ? x.lineTo(p[0], p[1]) : x.moveTo(p[0], p[1]));
+  x.closePath(); x.fill();
+}
+
+function render() {
+  const c = $('view');
+  c.width = img.naturalWidth;
+  c.height = img.naturalHeight;
+  const x = c.getContext('2d');
+  x.drawImage(img, 0, 0);
+  drawOverlay(x, c.width, c.height, dmg);
+}
+
+$('file').onchange = e => {
+  const f = e.target.files[0];
+  if (!f) return;
+  img = new Image();
+  img.onload = () => {
+    dmg = makeDamage(img.naturalWidth, img.naturalHeight);
+    render();
+    $('view').hidden = false;
+    $('rand').disabled = $('save').disabled = false;
+  };
+  img.src = URL.createObjectURL(f);
+};
+
+$('rand').onclick = () => {
+  dmg = makeDamage($('view').width, $('view').height);
+  render();
+};
+
+$('save').onclick = () => {
+  const a = document.createElement('a');
+  a.download = '碎屏效果.png';
+  a.href = $('view').toDataURL('image/png');
+  a.click();
+};
+</script>
+</body>
+</html>
